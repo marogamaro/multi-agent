@@ -391,66 +391,145 @@ function buildContext(topic, history) {
   return s;
 }
 
-/* ── Core streaming function ── */
+/* ── API helper ── */
+const API_HEADERS = {
+  'Content-Type': 'application/json',
+  'anthropic-version': '2023-06-01',
+  'anthropic-dangerous-allow-browser': 'true',
+};
+
+function friendlyError(err) {
+  const msg = err.message || '';
+  if (msg.includes('Load failed') || msg.includes('Failed to fetch') || msg.includes('NetworkError'))
+    return 'ネットワークエラーです。通信状態を確認して再試行してください。';
+  if (msg.includes('401') || msg.includes('authentication'))
+    return 'APIキーが正しくありません。確認してください。';
+  if (msg.includes('429'))
+    return 'リクエスト制限に達しました。少し待ってから再試行してください。';
+  if (msg.includes('AbortError') || msg.includes('abort'))
+    return '通信がタイムアウトしました（60秒）。再試行してください。';
+  return msg || '不明なエラーが発生しました。';
+}
+
+/* ── Non-streaming fallback (works on all browsers) ── */
+async function fetchNoStream(apiKey, model, system, userContent, useThinking) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    const body = {
+      model, max_tokens: 700, system,
+      messages: [{ role: 'user', content: userContent }],
+    };
+    if (useThinking) body.thinking = { type: 'adaptive' };
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { ...API_HEADERS, 'x-api-key': apiKey },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return data.content?.find(b => b.type === 'text')?.text || '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ── Core streaming function (with non-streaming fallback) ── */
 async function streamToElement(el, apiKey, model, system, userContent, useThinking) {
-  const body = {
-    model,
-    max_tokens: 700,
-    system,
-    messages: [{ role: 'user', content: userContent }],
-    stream: true,
-  };
-  if (useThinking) body.thinking = { type: 'adaptive' };
+  /* スマホなどストリーミング非対応環境は通常モードで取得して表示 */
+  const canStream = typeof ReadableStream !== 'undefined';
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-allow-browser': 'true',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  if (!canStream) {
+    el.innerHTML = '<span class="cursor"></span>';
+    const text = await fetchNoStream(apiKey, model, system, userContent, useThinking);
+    el.innerHTML = md(text);
+    return text;
   }
 
-  const cursor = Object.assign(document.createElement('span'), { className: 'cursor' });
-  el.appendChild(cursor);
+  /* ── Streaming path ── */
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
 
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = '', fullText = '', inThinking = false;
+  try {
+    const body = {
+      model, max_tokens: 700, system,
+      messages: [{ role: 'user', content: userContent }],
+      stream: true,
+    };
+    if (useThinking) body.thinking = { type: 'adaptive' };
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (!raw || raw === '[DONE]') continue;
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { ...API_HEADERS, 'x-api-key': apiKey },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: `HTTP ${res.status}` } }));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    /* res.body が null のブラウザは非ストリーミングにフォールバック */
+    if (!res.body) {
+      const data = await res.json().catch(() => null);
+      const text = data?.content?.find(b => b.type === 'text')?.text || '';
+      el.innerHTML = md(text);
+      return text;
+    }
+
+    const cursor = Object.assign(document.createElement('span'), { className: 'cursor' });
+    el.appendChild(cursor);
+
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', fullText = '', inThinking = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (!raw || raw === '[DONE]') continue;
+        try {
+          const ev = JSON.parse(raw);
+          if (ev.type === 'content_block_start') inThinking = ev.content_block?.type === 'thinking';
+          if (ev.type === 'content_block_stop')  inThinking = false;
+          if (ev.type === 'content_block_delta' && !inThinking && ev.delta?.type === 'text_delta') {
+            fullText += ev.delta.text;
+            cursor.before(document.createTextNode(ev.delta.text));
+          }
+        } catch (_) {}
+      }
+    }
+
+    cursor.remove();
+    el.innerHTML = md(fullText);
+    return fullText;
+
+  } catch (err) {
+    /* ストリーミング失敗 → 非ストリーミングで再試行 */
+    if (err.name !== 'AbortError') {
       try {
-        const ev = JSON.parse(raw);
-        if (ev.type === 'content_block_start')  inThinking = ev.content_block?.type === 'thinking';
-        if (ev.type === 'content_block_stop')   inThinking = false;
-        if (ev.type === 'content_block_delta' && !inThinking && ev.delta?.type === 'text_delta') {
-          fullText += ev.delta.text;
-          cursor.before(document.createTextNode(ev.delta.text));
-        }
+        el.innerHTML = '<small style="color:var(--muted)">再接続中…</small>';
+        const text = await fetchNoStream(apiKey, model, system, userContent, useThinking);
+        el.innerHTML = md(text);
+        return text;
       } catch (_) {}
     }
+    throw new Error(friendlyError(err));
+  } finally {
+    clearTimeout(timer);
   }
-
-  cursor.remove();
-  /* Re-render with markdown */
-  el.innerHTML = md(fullText);
-  return fullText;
 }
 
 /* ── Main orchestrator ── */
@@ -536,7 +615,7 @@ async function startDiscussion() {
 
   } catch (err) {
     const e = addEl('div', 'error-card');
-    e.textContent = `エラー: ${err.message}`;
+    e.textContent = `エラー: ${friendlyError(err)}`;
     console.error(err);
   } finally {
     btn.disabled = false;
