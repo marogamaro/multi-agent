@@ -313,6 +313,74 @@
     white-space: pre-wrap;
   }
 
+  /* Mode toggle */
+  .mode-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 12px;
+    padding: 8px;
+    transition: all 0.2s;
+  }
+
+  .mode-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .extract-btn {
+    width: 100%;
+    margin-top: 10px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 13px;
+    padding: 10px;
+    transition: all 0.2s;
+  }
+
+  .extract-btn:hover:not(:disabled) {
+    background: var(--accent2);
+    border-color: var(--accent2);
+    color: white;
+  }
+
+  .extract-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .extracted-preview {
+    margin-top: 10px;
+    background: rgba(59,130,246,0.06);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    display: none;
+  }
+
+  .extracted-label {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
   /* Copy button */
   .copy-btn {
     background: var(--border);
@@ -383,8 +451,28 @@
 
   <!-- Input -->
   <div class="input-section">
-    <div class="section-label">議題</div>
-    <textarea id="topic" placeholder="例：筑紫医療圏のDMAT夜間体制をどう強化するか"></textarea>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="modeDirectBtn" onclick="setMode('direct')">✏️ 議題を直接入力</button>
+      <button class="mode-btn" id="modeMemoBtn" onclick="setMode('memo')">📋 会議メモから自動抽出</button>
+    </div>
+
+    <!-- Direct mode -->
+    <div id="directMode">
+      <div class="section-label">議題</div>
+      <textarea id="topic" placeholder="例：筑紫医療圏のDMAT夜間体制をどう強化するか"></textarea>
+    </div>
+
+    <!-- Memo mode -->
+    <div id="memoMode" style="display:none">
+      <div class="section-label">会議メモ・発言録（そのまま貼り付け）</div>
+      <textarea id="memoText" style="min-height:140px" placeholder="会議での発言、議事録、箇条書きメモなど何でもOK。そのまま貼り付けてください。"></textarea>
+      <button class="extract-btn" id="extractBtn" onclick="extractTopic()">🔍 議題を自動抽出する</button>
+      <div class="extracted-preview" id="extractedPreview">
+        <div class="extracted-label">抽出された議題</div>
+        <div id="extractedText"></div>
+      </div>
+    </div>
+
     <button class="run-btn" id="runBtn" onclick="runAgents()">▶ 議論を開始する</button>
   </div>
 
@@ -488,7 +576,49 @@ const AGENTS = [
   }
 ];
 
-// Load saved API key
+// Mode switching
+let currentMode = 'direct';
+let extractedTopic = '';
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('directMode').style.display = mode === 'direct' ? 'block' : 'none';
+  document.getElementById('memoMode').style.display = mode === 'memo' ? 'block' : 'none';
+  document.getElementById('modeDirectBtn').className = 'mode-btn' + (mode === 'direct' ? ' active' : '');
+  document.getElementById('modeMemoBtn').className = 'mode-btn' + (mode === 'memo' ? ' active' : '');
+}
+
+async function extractTopic() {
+  const apiKey = document.getElementById('apiKey').value.trim() || localStorage.getItem('anthropic_key');
+  const memo = document.getElementById('memoText').value.trim();
+  if (!apiKey) return showError('APIキーを入力してください');
+  if (!memo) return showError('会議メモを入力してください');
+
+  const btn = document.getElementById('extractBtn');
+  btn.disabled = true;
+  btn.textContent = '🔍 抽出中...';
+  document.getElementById('extractedPreview').style.display = 'none';
+
+  try {
+    const result = await callClaude(apiKey,
+      `あなたは会議ファシリテーターです。
+与えられた会議メモ・発言録から、最も重要な議題・論点を1〜3文で簡潔に抽出してください。
+「〜をどうするか」「〜の是非」「〜の方針決定」のような形式で出力してください。
+余計な前置きや説明は不要。議題だけを出力してください。`,
+      [{ role: 'user', content: `以下の会議メモから議題を抽出してください：\n\n${memo}` }]
+    );
+    extractedTopic = result;
+    document.getElementById('extractedText').textContent = result;
+    document.getElementById('extractedPreview').style.display = 'block';
+  } catch(e) {
+    showError(e.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔍 議題を自動抽出する';
+}
+
+
 window.onload = () => {
   const saved = localStorage.getItem('anthropic_key');
   if (saved) {
@@ -566,7 +696,7 @@ async function callClaude(apiKey, systemPrompt, messages) {
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 3000,
+      max_tokens: 2000,
       system: systemPrompt,
       messages: messages
     })
@@ -583,10 +713,16 @@ async function callClaude(apiKey, systemPrompt, messages) {
 
 async function runAgents() {
   const apiKey = document.getElementById('apiKey').value.trim() || localStorage.getItem('anthropic_key');
-  const topic = document.getElementById('topic').value.trim();
-
   if (!apiKey) return showError('APIキーを入力してください');
-  if (!topic) return showError('議題を入力してください');
+
+  const topic = currentMode === 'memo'
+    ? extractedTopic
+    : document.getElementById('topic').value.trim();
+
+  if (!topic) {
+    if (currentMode === 'memo') return showError('先に「議題を自動抽出する」を押してください');
+    return showError('議題を入力してください');
+  }
 
   // Reset
   document.getElementById('errorBox').style.display = 'none';
