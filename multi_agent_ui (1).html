@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マルチエージェント議論システム</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --border: #1e2330;
+    --accent: #3b82f6;
+    --accent2: #06b6d4;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --success: #10b981;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --agent-a: #3b82f6;
+    --agent-b: #ef4444;
+    --agent-c: #f59e0b;
+    --agent-d: #10b981;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans JP', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    padding: 24px 16px 60px;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header */
+  header {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 4px;
+  }
+
+  /* API Key section */
+  .api-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+
+  .api-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  input[type="password"], input[type="text"], textarea {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+    width: 100%;
+  }
+
+  input[type="password"]:focus,
+  input[type="text"]:focus,
+  textarea:focus {
+    border-color: var(--accent);
+  }
+
+  .save-btn {
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 10px 14px;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+
+  .save-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .api-status {
+    font-size: 11px;
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .api-status.ok { color: var(--success); }
+  .api-status.empty { color: var(--text-muted); }
+
+  /* Input section */
+  .input-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+
+  textarea {
+    resize: none;
+    min-height: 100px;
+    line-height: 1.6;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 14px;
+  }
+
+  .run-btn {
+    width: 100%;
+    margin-top: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 14px;
+    transition: opacity 0.2s, transform 0.1s;
+    letter-spacing: 0.05em;
+  }
+
+  .run-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+  .run-btn:active:not(:disabled) { transform: translateY(0); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Agents grid */
+  .agents-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  @media (max-width: 600px) {
+    .agents-grid { grid-template-columns: 1fr; }
+  }
+
+  .agent-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .agent-card.active { border-color: var(--agent-color); }
+  .agent-card.done { border-color: var(--border); opacity: 0.85; }
+
+  .agent-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .agent-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--agent-color);
+    flex-shrink: 0;
+  }
+
+  .agent-dot.pulse {
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .agent-name {
+    font-size: 13px;
+    font-weight: 500;
+    flex: 1;
+  }
+
+  .agent-status {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+  }
+
+  .agent-status.running { color: var(--agent-color); }
+  .agent-status.done { color: var(--success); }
+
+  .agent-body {
+    padding: 14px;
+    min-height: 80px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .agent-body p {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-muted);
+  }
+
+  .agent-body .content {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+
+  /* Synthesis card */
+  .synthesis-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    transition: border-color 0.3s;
+  }
+
+  .synthesis-card.active { border-color: var(--agent-d); }
+
+  .synthesis-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: linear-gradient(90deg, rgba(16,185,129,0.08), transparent);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .synthesis-body {
+    padding: 16px;
+  }
+
+  .synthesis-body .content {
+    font-size: 14px;
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+
+  /* Copy button */
+  .copy-btn {
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 6px 10px;
+    margin-top: 12px;
+    transition: all 0.2s;
+  }
+
+  .copy-btn:hover { background: var(--accent); border-color: var(--accent); color: white; }
+
+  /* Error */
+  .error-box {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #fca5a5;
+    margin-bottom: 12px;
+    display: none;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Thinking dots */
+  .thinking::after {
+    content: '...';
+    animation: dots 1.2s infinite;
+  }
+
+  @keyframes dots {
+    0% { content: '.'; }
+    33% { content: '..'; }
+    66% { content: '...'; }
+  }
+
+  /* Markdown-like formatting */
+  .content strong { color: #93c5fd; font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🤖</div>
+      <div>
+        <h1>マルチエージェント議論</h1>
+        <div class="subtitle">4 agents · claude-opus-4-5 · sequential reasoning</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- API Key -->
+  <div class="api-section">
+    <div class="section-label">API KEY</div>
+    <div class="api-row">
+      <input type="password" id="apiKey" placeholder="sk-ant-..." />
+      <button class="save-btn" onclick="saveKey()">保存</button>
+    </div>
+    <div class="api-status empty" id="apiStatus">⬤ 未設定</div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-section">
+    <div class="section-label">議題</div>
+    <textarea id="topic" placeholder="例：筑紫医療圏のDMAT夜間体制をどう強化するか"></textarea>
+    <button class="run-btn" id="runBtn" onclick="runAgents()">▶ 議論を開始する</button>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox"></div>
+
+  <!-- Agent cards -->
+  <div class="agents-grid">
+    <div class="agent-card" id="card-0" style="--agent-color: var(--agent-a)">
+      <div class="agent-header">
+        <div class="agent-dot" id="dot-0"></div>
+        <div class="agent-name">📋 論点整理</div>
+        <div class="agent-status" id="status-0">待機中</div>
+      </div>
+      <div class="agent-body" id="body-0">
+        <p>論点と結論候補を整理します</p>
+      </div>
+    </div>
+
+    <div class="agent-card" id="card-1" style="--agent-color: var(--agent-b)">
+      <div class="agent-header">
+        <div class="agent-dot" id="dot-1"></div>
+        <div class="agent-name">⚔️ 反論</div>
+        <div class="agent-status" id="status-1">待機中</div>
+      </div>
+      <div class="agent-body" id="body-1">
+        <p>穴・リスクを突きます</p>
+      </div>
+    </div>
+
+    <div class="agent-card" id="card-2" style="--agent-color: var(--agent-c)">
+      <div class="agent-header">
+        <div class="agent-dot" id="dot-2"></div>
+        <div class="agent-name">🔢 数字／現実性</div>
+        <div class="agent-status" id="status-2">待機中</div>
+      </div>
+      <div class="agent-body" id="body-2">
+        <p>コスト・実現可能性を査定します</p>
+      </div>
+    </div>
+
+    <div class="agent-card" id="card-3" style="--agent-color: var(--agent-d)">
+      <div class="agent-header">
+        <div class="agent-dot" id="dot-3"></div>
+        <div class="agent-name">🎯 統合</div>
+        <div class="agent-status" id="status-3">待機中</div>
+      </div>
+      <div class="agent-body" id="body-3">
+        <p>「結局どうする」を出します</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const AGENTS = [
+  {
+    name: "論点整理エージェント",
+    system: `あなたは論点整理の専門家です。
+与えられた議題・状況を分析し、以下を簡潔に出力してください：
+
+1. 核心的な論点（最大3つ）
+2. 考えられる結論の候補（最大3つ）
+3. 今最も重要な問いは何か（1つ）
+
+箇条書きで簡潔に。余計な前置きは不要。`
+  },
+  {
+    name: "反論エージェント",
+    system: `あなたは批判的思考の専門家です。
+論点整理エージェントの分析を踏まえ、以下を出力してください：
+
+1. 各結論候補の弱点・穴（それぞれ1〜2点）
+2. 見落とされているリスクや前提
+3. 「その結論で本当に大丈夫か？」という最大の懸念
+
+遠慮なく突いてください。建設的な批判が目的。`
+  },
+  {
+    name: "数字／現実性エージェント",
+    system: `あなたは現実性・実現可能性の査定専門家です。
+これまでの議論を踏まえ、以下を出力してください：
+
+1. 各選択肢のコスト・工数・リソースのざっくり見積もり
+2. 現場で実際に動くか？の現実性評価（◎○△×）
+3. 最大のボトルネックは何か
+
+医療・災害医療・病院運営の文脈で考えてください。`
+  },
+  {
+    name: "統合エージェント",
+    system: `あなたは意思決定支援の専門家です。
+3つのエージェントの議論を統合し、以下を出力してください：
+
+1. 結論：推奨案（1つに絞る）
+2. 残る懸念点（最大2つ）とその対策
+3. 次の一手（明日から具体的に何をするか）
+
+「結局どうなん？」に答える形で。簡潔に。`
+  }
+];
+
+// Load saved API key
+window.onload = () => {
+  const saved = localStorage.getItem('anthropic_key');
+  if (saved) {
+    document.getElementById('apiKey').value = saved;
+    document.getElementById('apiStatus').textContent = '⬤ 設定済み';
+    document.getElementById('apiStatus').className = 'api-status ok';
+  }
+};
+
+function saveKey() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) return;
+  localStorage.setItem('anthropic_key', key);
+  document.getElementById('apiStatus').textContent = '⬤ 保存しました';
+  document.getElementById('apiStatus').className = 'api-status ok';
+}
+
+function setAgentState(idx, state, text = '') {
+  const card = document.getElementById(`card-${idx}`);
+  const dot = document.getElementById(`dot-${idx}`);
+  const status = document.getElementById(`status-${idx}`);
+  const body = document.getElementById(`body-${idx}`);
+
+  if (state === 'running') {
+    card.className = 'agent-card active';
+    dot.className = 'agent-dot pulse';
+    status.textContent = '思考中';
+    status.className = 'agent-status running';
+    body.innerHTML = '<p class="thinking">思考中</p>';
+  } else if (state === 'done') {
+    card.className = 'agent-card done';
+    dot.className = 'agent-dot';
+    status.textContent = '完了';
+    status.className = 'agent-status done';
+    body.innerHTML = `<div class="content">${formatText(text)}</div><button class="copy-btn" onclick="copyText(this, \`${escapeBacktick(text)}\`)">コピー</button>`;
+  } else {
+    card.className = 'agent-card';
+    dot.className = 'agent-dot';
+    status.textContent = '待機中';
+    status.className = 'agent-status';
+  }
+}
+
+function formatText(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+}
+
+function escapeBacktick(str) {
+  return str.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+}
+
+function copyText(btn, text) {
+  navigator.clipboard.writeText(text);
+  btn.textContent = '✓ コピーしました';
+  setTimeout(() => btn.textContent = 'コピー', 2000);
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = '❌ ' + msg;
+  box.style.display = 'block';
+}
+
+async function callClaude(apiKey, systemPrompt, messages) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: messages
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+async function runAgents() {
+  const apiKey = document.getElementById('apiKey').value.trim() || localStorage.getItem('anthropic_key');
+  const topic = document.getElementById('topic').value.trim();
+
+  if (!apiKey) return showError('APIキーを入力してください');
+  if (!topic) return showError('議題を入力してください');
+
+  // Reset
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('runBtn').textContent = '実行中...';
+  for (let i = 0; i < 4; i++) setAgentState(i, 'waiting');
+
+  const conversation = [
+    { role: 'user', content: `以下の議題・状況について分析してください：\n\n${topic}` }
+  ];
+
+  try {
+    for (let i = 0; i < AGENTS.length; i++) {
+      setAgentState(i, 'running');
+
+      const response = await callClaude(apiKey, AGENTS[i].system, conversation);
+      setAgentState(i, 'done', response);
+
+      conversation.push({ role: 'assistant', content: response });
+
+      if (i < AGENTS.length - 1) {
+        conversation.push({ role: 'user', content: `ありがとう。では次に${AGENTS[i+1].name}として分析してください。` });
+      }
+    }
+  } catch (e) {
+    showError(e.message);
+  }
+
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('runBtn').textContent = '▶ 議論を開始する';
+}
+</script>
+</body>
+</html>
