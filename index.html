@@ -332,6 +332,12 @@
     <button class="btn btn-primary" id="startBtn" onclick="startDiscussion()">
       ▶ 議論を開始する
     </button>
+
+    <button class="btn" id="testBtn" onclick="testConnection()"
+      style="margin-top:0.5rem;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:0.85rem;padding:0.6rem;">
+      🔍 接続テスト
+    </button>
+    <div id="testResult" style="display:none;margin-top:0.75rem;padding:0.75rem;border-radius:8px;font-size:0.8rem;font-family:monospace;word-break:break-all;"></div>
   </div>
 
   <!-- Output -->
@@ -623,9 +629,70 @@ async function startDiscussion() {
   }
 }
 
+/* ── Connection test ── */
+async function testConnection() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const box    = document.getElementById('testResult');
+  const btn    = document.getElementById('testBtn');
+
+  box.style.display = 'block';
+  box.style.background = 'rgba(255,255,255,0.05)';
+  box.style.border = '1px solid var(--border)';
+  box.style.color  = 'var(--muted)';
+  box.textContent  = '🔄 テスト中…';
+  btn.disabled = true;
+
+  const lines = [];
+  lines.push(`キー: ${apiKey ? apiKey.slice(0,12) + '…' + apiKey.slice(-4) : '（未入力）'}`);
+  lines.push(`キー長: ${apiKey.length} 文字`);
+  lines.push(`形式: ${apiKey.startsWith('sk-ant-') ? '✅ 正しい' : '❌ sk-ant- で始まっていません'}`);
+
+  if (!apiKey) {
+    box.style.background = 'rgba(239,68,68,0.1)';
+    box.style.color = '#fca5a5';
+    box.textContent = '❌ APIキーが入力されていません';
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { ...API_HEADERS, 'x-api-key': apiKey },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5',
+        max_tokens: 10,
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
+    });
+    lines.push(`HTTPステータス: ${res.status}`);
+    if (res.ok) {
+      box.style.background = 'rgba(16,185,129,0.1)';
+      box.style.color = '#6ee7b7';
+      lines.unshift('✅ 接続成功！');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      lines.unshift('❌ APIエラー');
+      lines.push(`メッセージ: ${err.error?.message || '不明'}`);
+      box.style.background = 'rgba(239,68,68,0.1)';
+      box.style.color = '#fca5a5';
+    }
+  } catch (e) {
+    lines.unshift('❌ 接続失敗');
+    lines.push(`エラー種別: ${e.name}`);
+    lines.push(`詳細: ${e.message}`);
+    box.style.background = 'rgba(239,68,68,0.1)';
+    box.style.color = '#fca5a5';
+  }
+
+  box.textContent = lines.join('\n');
+  btn.disabled = false;
+}
+
 /* ── Init ── */
 window.addEventListener('load', () => {
-  const k = localStorage.getItem('anthropic_api_key');
+  // 新旧どちらのキー名でも読み込む
+  const k = localStorage.getItem('anthropic_api_key') || localStorage.getItem('anthropic_key');
   if (k) document.getElementById('apiKey').value = k;
 });
 </script>
