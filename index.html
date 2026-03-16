@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>マルチエージェント議論システム</title>
+  <style>
+    :root {
+      --bg:          #0f172a;
+      --surface:     #1e293b;
+      --border:      #334155;
+      --text:        #f1f5f9;
+      --muted:       #94a3b8;
+      --scientist:   #3b82f6;
+      --philosopher: #8b5cf6;
+      --critic:      #ef4444;
+      --synthesizer: #10b981;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.65;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, #1a3a6b 0%, #2d1b69 100%);
+      padding: 1.5rem 1rem 1.25rem;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 {
+      font-size: clamp(1.1rem, 4vw, 1.75rem);
+      font-weight: 800;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p { color: var(--muted); font-size: 0.82rem; margin-top: 0.4rem; }
+
+    /* ── Layout ── */
+    .container { max-width: 780px; margin: 0 auto; padding: 1rem; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.4rem;
+      margin-bottom: 1rem;
+    }
+    .card-title {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 1.1rem;
+    }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 1rem; }
+    label {
+      display: block;
+      font-size: 0.83rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    input[type="text"], input[type="password"], textarea, select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 9px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.97rem;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #60a5fa;
+      box-shadow: 0 0 0 3px rgba(96,165,250,0.15);
+    }
+    textarea { resize: vertical; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+    @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+
+    /* API key wrapper */
+    .key-wrap { position: relative; }
+    .key-wrap input { padding-right: 2.8rem; }
+    .key-toggle {
+      position: absolute; right: 0.7rem; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none;
+      color: var(--muted); cursor: pointer;
+      font-size: 1rem; padding: 0.25rem;
+      line-height: 1;
+    }
+
+    /* Checkbox */
+    .check-label {
+      display: flex; align-items: center; gap: 0.5rem;
+      cursor: pointer; font-size: 0.83rem; color: var(--muted);
+    }
+    .check-label input[type="checkbox"] { width: auto; }
+
+    /* Agents chips */
+    .agent-chips {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem; margin-bottom: 1.1rem;
+    }
+    @media (max-width: 480px) {
+      .agent-chips { grid-template-columns: repeat(2, 1fr); }
+    }
+    .chip {
+      padding: 0.4rem 0.5rem;
+      border-radius: 8px;
+      font-size: 0.78rem; font-weight: 600;
+      text-align: center;
+      border: 1px solid;
+    }
+    .chip.scientist  { color: var(--scientist);   border-color: var(--scientist);   background: rgba(59,130,246,.1); }
+    .chip.philosopher{ color: #c4b5fd;             border-color: var(--philosopher); background: rgba(139,92,246,.1); }
+    .chip.critic     { color: #fca5a5;             border-color: var(--critic);      background: rgba(239,68,68,.1); }
+    .chip.synthesizer{ color: #6ee7b7;             border-color: var(--synthesizer); background: rgba(16,185,129,.1); }
+
+    /* Start button */
+    .btn {
+      width: 100%;
+      padding: 0.95rem;
+      border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      color: #fff;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.88; }
+    .btn:active:not(:disabled) { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Discussion area ── */
+    .round-label {
+      text-align: center;
+      padding: 0.6rem 1rem;
+      background: rgba(255,255,255,0.04);
+      border-radius: 8px;
+      margin: 1rem 0 0.75rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    /* Agent response card */
+    .agent-card {
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 0.85rem;
+      border: 1px solid;
+      animation: fadeUp 0.3s ease both;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .agent-card.scientist  { border-color: var(--scientist); }
+    .agent-card.philosopher{ border-color: var(--philosopher); }
+    .agent-card.critic     { border-color: var(--critic); }
+    .agent-card.synthesizer{ border-color: var(--synthesizer); }
+
+    .ac-header {
+      display: flex; align-items: center; gap: 0.65rem;
+      padding: 0.65rem 1rem;
+    }
+    .scientist  .ac-header { background: rgba(59,130,246,.15); }
+    .philosopher .ac-header { background: rgba(139,92,246,.15); }
+    .critic     .ac-header { background: rgba(239,68,68,.15); }
+    .synthesizer .ac-header { background: rgba(16,185,129,.15); }
+
+    .ac-icon {
+      width: 34px; height: 34px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.15rem; flex-shrink: 0;
+    }
+    .ac-name  { font-weight: 700; font-size: 0.92rem; }
+    .ac-round { font-size: 0.72rem; color: var(--muted); }
+
+    .ac-body {
+      padding: 0.9rem 1rem;
+      background: var(--surface);
+      font-size: 0.93rem;
+      min-height: 1.8rem;
+    }
+
+    /* Markdown rendering */
+    .ac-body h2 { font-size: 1rem; margin: 0.8rem 0 0.4rem; }
+    .ac-body h3 { font-size: 0.95rem; margin: 0.7rem 0 0.3rem; }
+    .ac-body p  { margin-bottom: 0.6rem; }
+    .ac-body p:last-child { margin-bottom: 0; }
+    .ac-body strong { font-weight: 700; }
+
+    /* Cursor blink */
+    .cursor {
+      display: inline-block; width: 2px; height: 1em;
+      background: currentColor; vertical-align: text-bottom;
+      margin-left: 1px;
+      animation: blink 0.65s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* Summary card */
+    .summary-card {
+      background: linear-gradient(135deg,rgba(16,185,129,.08),rgba(16,185,129,.03));
+      border: 1px solid var(--synthesizer);
+      border-radius: 14px;
+      padding: 1.2rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .summary-card .summary-title {
+      color: #6ee7b7; font-weight: 700; font-size: 0.95rem;
+      margin-bottom: 0.8rem;
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: flex; align-items: center; gap: 0.7rem;
+      padding: 0.6rem 1rem;
+      background: var(--surface); border-radius: 8px;
+      margin-bottom: 0.6rem;
+      font-size: 0.83rem; color: var(--muted);
+    }
+    .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid var(--border);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Error */
+    .error-card {
+      background: rgba(239,68,68,.1);
+      border: 1px solid var(--critic);
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+      color: #fca5a5; font-size: 0.88rem;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem 1rem 3rem;
+      color: var(--muted); font-size: 0.78rem;
+    }
+    footer a { color: #60a5fa; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🤖 マルチエージェント議論システム</h1>
+  <p>4つのAIエージェントがテーマについてリアルタイムで議論します</p>
+</header>
+
+<div class="container">
+
+  <!-- Settings -->
+  <div class="card">
+    <div class="card-title">⚙️ 設定</div>
+
+    <div class="form-group">
+      <label>Anthropic API キー</label>
+      <div class="key-wrap">
+        <input type="password" id="apiKey" placeholder="sk-ant-api03-..." autocomplete="off">
+        <button class="key-toggle" onclick="toggleKey()" title="表示/非表示">👁</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>議題</label>
+      <textarea id="topic" rows="2"
+        placeholder="例：人工知能は人間の創造性を高めるか、それとも脅かすか？"
+      >人工知能は人間の創造性を高めるか、それとも脅かすか？</textarea>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label>ラウンド数</label>
+        <select id="rounds">
+          <option value="1">1ラウンド</option>
+          <option value="2" selected>2ラウンド</option>
+          <option value="3">3ラウンド</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>モデル</label>
+        <select id="model">
+          <option value="claude-opus-4-6">claude-opus-4-6</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+          <option value="claude-haiku-4-5">claude-haiku-4-5</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="check-label">
+        <input type="checkbox" id="useThinking">
+        拡張思考を有効にする（高精度・低速・高コスト）
+      </label>
+    </div>
+
+    <div class="agent-chips">
+      <div class="chip scientist">🔬 科学者</div>
+      <div class="chip philosopher">🏛️ 哲学者</div>
+      <div class="chip critic">⚡ 批評家</div>
+      <div class="chip synthesizer">🔮 統合者</div>
+    </div>
+
+    <button class="btn btn-primary" id="startBtn" onclick="startDiscussion()">
+      ▶ 議論を開始する
+    </button>
+  </div>
+
+  <!-- Output -->
+  <div id="output"></div>
+
+</div>
+
+<footer>
+  <p>Powered by <a href="https://anthropic.com" target="_blank">Anthropic Claude API</a>
+  ・ ソースは <a href="https://github.com" target="_blank">GitHub</a> で公開中</p>
+</footer>
+
+<script>
+/* ── Agent definitions ── */
+const AGENTS = [
+  {
+    id: 'scientist', name: '科学者 (Scientist)', icon: '🔬',
+    system: 'あなたは論理的・科学的思考を重視する科学者です。証拠・データ・因果関係に基づいて議論してください。他の参加者の意見を批判的に評価し、仮説を検証する視点で発言します。返答は3〜5文程度に簡潔にまとめてください。',
+  },
+  {
+    id: 'philosopher', name: '哲学者 (Philosopher)', icon: '🏛️',
+    system: 'あなたは倫理・存在論・認識論を専門とする哲学者です。概念の定義、価値観、根本的な前提を問い直しながら議論してください。ソクラテス的な問いかけを交えつつ、本質的な洞察を提供します。返答は3〜5文程度に簡潔にまとめてください。',
+  },
+  {
+    id: 'critic', name: '批評家 (Critic)', icon: '⚡',
+    system: 'あなたは鋭い批評眼を持つ社会批評家です。他の参加者の論点の矛盾、見落とし、バイアスを指摘してください。反論や代替案を積極的に提示し、議論をより深化させます。返答は3〜5文程度に簡潔にまとめてください。',
+  },
+  {
+    id: 'synthesizer', name: '統合者 (Synthesizer)', icon: '🔮',
+    system: 'あなたは多様な視点を統合する思想家です。科学・哲学・批評の観点を橋渡しし、共通点や新たな視野を見出してください。対立を超えた統合的な視点を提供し、議論を建設的な方向へ導きます。返答は3〜5文程度に簡潔にまとめてください。',
+  },
+];
+
+/* ── Utilities ── */
+function scrollBottom() {
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+function toggleKey() {
+  const el = document.getElementById('apiKey');
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+/* Simple markdown → HTML (applied after streaming) */
+function md(text) {
+  const esc = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc
+    .replace(/^#{1,2} (.+)$/gm, '<strong>$1</strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n{2,}/g, '\n\n')
+    .split('\n\n').map(p => p.trim() ? `<p>${p.replace(/\n/g,'<br>')}</p>` : '').join('');
+}
+
+function buildContext(topic, history) {
+  let s = `【議題】${topic}\n\n`;
+  for (const h of history) s += `--- ${h.agent} ---\n${h.content}\n\n`;
+  return s;
+}
+
+/* ── Core streaming function ── */
+async function streamToElement(el, apiKey, model, system, userContent, useThinking) {
+  const body = {
+    model,
+    max_tokens: 700,
+    system,
+    messages: [{ role: 'user', content: userContent }],
+    stream: true,
+  };
+  if (useThinking) body.thinking = { type: 'adaptive' };
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-allow-browser': 'true',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  const cursor = Object.assign(document.createElement('span'), { className: 'cursor' });
+  el.appendChild(cursor);
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', fullText = '', inThinking = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const raw = line.slice(6).trim();
+      if (!raw || raw === '[DONE]') continue;
+      try {
+        const ev = JSON.parse(raw);
+        if (ev.type === 'content_block_start')  inThinking = ev.content_block?.type === 'thinking';
+        if (ev.type === 'content_block_stop')   inThinking = false;
+        if (ev.type === 'content_block_delta' && !inThinking && ev.delta?.type === 'text_delta') {
+          fullText += ev.delta.text;
+          cursor.before(document.createTextNode(ev.delta.text));
+        }
+      } catch (_) {}
+    }
+  }
+
+  cursor.remove();
+  /* Re-render with markdown */
+  el.innerHTML = md(fullText);
+  return fullText;
+}
+
+/* ── Main orchestrator ── */
+async function startDiscussion() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  if (!apiKey) { alert('API キーを入力してください。'); return; }
+  localStorage.setItem('anthropic_api_key', apiKey);
+
+  const topic = document.getElementById('topic').value.trim();
+  if (!topic) { alert('議題を入力してください。'); return; }
+
+  const rounds      = parseInt(document.getElementById('rounds').value);
+  const model       = document.getElementById('model').value;
+  const useThinking = document.getElementById('useThinking').checked;
+
+  const btn    = document.getElementById('startBtn');
+  const output = document.getElementById('output');
+  btn.disabled = true;
+  btn.textContent = '⏳ 議論中…';
+  output.innerHTML = '';
+
+  const history = [];
+
+  const addEl = (tag, cls, parent) => {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    (parent || output).appendChild(el);
+    return el;
+  };
+
+  const status = (msg) => {
+    const bar = addEl('div', 'status-bar');
+    bar.innerHTML = `<div class="spinner"></div><span>${msg}</span>`;
+    return bar;
+  };
+
+  try {
+    for (let r = 1; r <= rounds; r++) {
+      const lbl = addEl('div', 'round-label');
+      lbl.textContent = `ラウンド ${r} / ${rounds}`;
+
+      for (const agent of AGENTS) {
+        const bar = status(`${agent.name} が考えています…`);
+        scrollBottom();
+
+        /* Build agent card */
+        const card = addEl('div', `agent-card ${agent.id}`);
+        card.innerHTML = `
+          <div class="ac-header">
+            <div class="ac-icon">${agent.icon}</div>
+            <div>
+              <div class="ac-name">${agent.name}</div>
+              <div class="ac-round">ラウンド ${r}</div>
+            </div>
+          </div>
+          <div class="ac-body"></div>`;
+        bar.remove();
+
+        const body = card.querySelector('.ac-body');
+        const ctx  = buildContext(topic, history);
+        const msg  = `${ctx}\nあなたは「${agent.name}」として議論に参加してください。他の参加者の発言を踏まえ、あなたの役割の視点から意見を述べてください。`;
+
+        const text = await streamToElement(body, apiKey, model, agent.system, msg, useThinking);
+        history.push({ agent: agent.name, content: text });
+        scrollBottom();
+      }
+    }
+
+    /* Final summary */
+    addEl('div', 'round-label').textContent = '🔮 最終総括';
+    const synthBar = status('統合者が総括を作成中…');
+    scrollBottom();
+
+    const sumCard = addEl('div', 'summary-card');
+    sumCard.innerHTML = `<div class="summary-title">🔮 統合者 による最終総括</div><div class="ac-body"></div>`;
+    synthBar.remove();
+
+    const sumBody = sumCard.querySelector('.ac-body');
+    const ctx  = buildContext(topic, history);
+    const msg  = `${ctx}\n上記の議論全体を振り返り、主要な論点・合意点・未解決の問いを200字程度で簡潔にまとめてください。`;
+    await streamToElement(sumBody, apiKey, model, AGENTS[3].system, msg, false);
+    scrollBottom();
+
+  } catch (err) {
+    const e = addEl('div', 'error-card');
+    e.textContent = `エラー: ${err.message}`;
+    console.error(err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ 議論を開始する';
+  }
+}
+
+/* ── Init ── */
+window.addEventListener('load', () => {
+  const k = localStorage.getItem('anthropic_api_key');
+  if (k) document.getElementById('apiKey').value = k;
+});
+</script>
+</body>
+</html>
